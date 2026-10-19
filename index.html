@@ -927,9 +927,59 @@ body{background-color:var(--chalkboard);background-image:radial-gradient(rgba(25
 @media(max-width:680px){.premium-overlay.cd-playing .cd-layout{grid-template-columns:minmax(0,1fr) clamp(112px,27vw,160px);gap:4px}.premium-overlay.cd-playing .cd-sidebar{padding:3px;gap:3px}.premium-overlay.cd-playing .cd-cell{font-size:clamp(9px,1.8vw,17px)!important;padding:0;border-width:1px}.premium-overlay.cd-playing .cd-side-actions button{font-size:10px!important;padding:4px 1px!important}.premium-overlay.cd-playing .cd-team{font-size:11px}.premium-overlay.cd-playing .cd-team strong{font-size:19px}}
 @media(max-height:600px){.premium-overlay.cd-playing .cd-sidebar{gap:2px}.premium-overlay.cd-playing .cd-team{padding:2px}.premium-overlay.cd-playing .cd-die{min-height:38px;font-size:36px!important}.premium-overlay.cd-playing .cd-side-actions button{padding:3px 1px!important}.premium-overlay.cd-playing .cd-notice{font-size:11px}}
 </style>
+<style id="premium-auth-styles">
+html:not(.premium-authorized) body > :not(#authScreen):not(#premium-memberBar):not(script):not(style){visibility:hidden!important;pointer-events:none!important}
+#authScreen{position:fixed;inset:0;z-index:2147483640;background:#17172b;color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:22px;overflow:auto;font:16px Arial,sans-serif;text-align:center;box-sizing:border-box}
+#authScreen>*,#authScreen form{width:min(100%,420px)}
+#authScreen h1{font:700 29px Fredoka,Arial,sans-serif;margin:10px auto;color:#ffda69}
+#authScreen input{display:block;width:100%;box-sizing:border-box;margin:9px auto;padding:13px;background:white;color:#222;border:1px solid #aaa;border-radius:9px;font:16px Arial,sans-serif}
+#authScreen button,#premium-memberBar button{padding:12px 16px;border:0;border-radius:9px;background:#ffca28;color:#222;font-weight:700;cursor:pointer}
+#authScreen button{width:100%;margin:6px auto}
+#authScreen #message{min-height:28px;margin:14px auto;line-height:1.5;overflow-wrap:anywhere}
+#authScreen .muted{color:#ddd;font-size:13px}
+#premium-memberBar{display:none;position:fixed;top:8px;right:8px;z-index:1900;background:#1c2831e8;color:white;padding:5px 7px;border-radius:9px;align-items:center;gap:8px;font:12px Nunito,Arial,sans-serif}
+html.premium-authorized #premium-memberBar{display:flex}
+#premium-memberBar button{padding:5px 9px;font-size:12px}
+</style>
 </head>
 
 <body class="single-mode">
+<section id="authScreen">
+    <h1 id="gameTitle">Teacher Khen's Premium Game</h1>
+    <p>Log in using your Learning Hub account.</p>
+
+    <form id="loginForm">
+      <input
+        id="email"
+        type="email"
+        placeholder="Email address"
+        autocomplete="username"
+        required
+      >
+
+      <input
+        id="password"
+        type="password"
+        placeholder="Password"
+        autocomplete="current-password"
+        required
+      >
+
+      <button id="loginButton" type="submit">Log In</button>
+    </form>
+
+    <button id="signupButton" type="button">Create Account</button>
+    <button id="resetButton" type="button">Forgot Password?</button>
+
+    <div id="message" role="status" aria-live="polite">
+      Connecting to the membership system...
+    </div>
+
+    <p class="muted">
+      Creating an account does not automatically grant Premium access.
+    </p>
+  </section>
+<header id="premium-memberBar"><span id="memberInfo">Premium Member</span><button id="logoutButton" type="button">Log Out</button></header>
 
 <div class="premium-top premium-ui">
 <button onclick="Premium.open('menu')">🎮 Games</button><button onclick="Premium.open('presets')">📚 Presets & Photos</button><button onclick="Premium.open('presentation')">🖼️ Present</button><button onclick="Premium.open('help')">❔ How to Play</button><button onclick="Premium.exportJSON()">⬇️ Export File</button><button onclick="document.getElementById('premium-import').click()">⬆️ Load File</button><button onclick="Premium.fullscreen()">⛶ Fullscreen</button>
@@ -3545,6 +3595,382 @@ const ConnectDots=(()=>{
   window.addEventListener('resize',queue);
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(queue);
   queue();
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script id="premium-auth-logic">
+(()=>{
+// ==========================================
+    // 1. YOUR SUPABASE CONFIGURATION
+    // ==========================================
+
+    const SUPABASE_URL =
+      "https://onigbrcsfcbuporhylxv.supabase.co";
+
+    const SUPABASE_PUBLISHABLE_KEY =
+      "sb_publishable_MMXsHQKzKYn0mAA3MQOlWA_pEdCS-r3";
+
+    const db = window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_PUBLISHABLE_KEY
+    );
+
+
+    // ==========================================
+    // 2. GAME SETTINGS
+    // Change this title for each new game.
+    // ==========================================
+
+    const GAME_TITLE = "Teacher Khen’s Phonics Board Premium";
+
+    document.title = GAME_TITLE;
+    document.getElementById("gameTitle").textContent = GAME_TITLE;
+
+
+    // ==========================================
+    // 3. PAGE ELEMENTS AND STATE
+    // ==========================================
+
+    const authScreen = document.getElementById("authScreen");
+    const gameArea = document.documentElement;
+    const message = document.getElementById("message");
+    const loginForm = document.getElementById("loginForm");
+    const loginButton = document.getElementById("loginButton");
+
+    let currentUserId = null;
+    let checkNumber = 0;
+    let membershipVerified = false;
+    let authInitialized = false;
+
+
+    function showMessage(text) {
+      message.textContent = text;
+    }
+
+    function showLogin(text) {
+      membershipVerified = false;
+      gameArea.classList.remove("premium-authorized");
+      authScreen.style.display = "flex";
+      showMessage(text);
+    }
+
+    function showGame(user, membership) {
+      membershipVerified = true;
+      currentUserId = user.id;
+
+      authScreen.style.display = "none";
+      gameArea.classList.add("premium-authorized");
+
+      document.getElementById("memberInfo").textContent =
+        "Premium Member: " + (user.email || "Logged in");
+
+      console.log(
+        "Membership verified:",
+        membership.plan,
+        membership.expires_at
+      );
+    }
+
+
+    // ==========================================
+    // 4. MEMBERSHIP VERIFICATION
+    // ==========================================
+
+    async function verifyMembership(user) {
+      const thisCheck = ++checkNumber;
+
+      membershipVerified = false;
+      gameArea.classList.remove("premium-authorized");
+      authScreen.style.display = "flex";
+
+      if (!user) {
+        currentUserId = null;
+        showLogin("Please log in to access this Premium game.");
+        return;
+      }
+
+      currentUserId = user.id;
+      showMessage("Checking your Premium membership...");
+
+      try {
+        const { data, error } = await db
+          .from("learning_hub_memberships")
+          .select("user_id, plan, status, expires_at")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (thisCheck !== checkNumber) return;
+
+        if (error) {
+          console.error("Membership verification failed:", error);
+          showLogin(
+            "We couldn't verify your membership. Please try again " +
+            "or contact support."
+          );
+          return;
+        }
+
+        if (!data) {
+          showLogin(
+            "No membership was found for this account. " +
+            "Please subscribe or contact support."
+          );
+          return;
+        }
+
+        const allowedPlans = ["monthly", "yearly", "premium"];
+
+        const plan = String(data.plan || "").toLowerCase();
+        const status = String(data.status || "").toLowerCase();
+
+        const expiration = data.expires_at
+          ? Date.parse(data.expires_at)
+          : NaN;
+
+        const planIsValid = allowedPlans.includes(plan);
+        const statusIsValid = status === "active";
+        const expirationIsValid =
+          Number.isFinite(expiration) && expiration > Date.now();
+
+        if (
+          data.user_id !== user.id ||
+          !planIsValid ||
+          !statusIsValid ||
+          !expirationIsValid
+        ) {
+          showLogin(
+            "Your Premium membership is inactive or expired. " +
+            "Please renew your subscription."
+          );
+          return;
+        }
+
+        showGame(user, data);
+
+      } catch (error) {
+        console.error(error);
+
+        if (thisCheck === checkNumber) {
+          showLogin(
+            "Unable to verify membership. Check your connection " +
+            "and try again."
+          );
+        }
+      }
+    }
+
+
+    // ==========================================
+    // 5. LOGIN
+    // ==========================================
+
+    loginForm.addEventListener("submit", async function(event) {
+      event.preventDefault();
+
+      loginButton.disabled = true;
+      showMessage("Logging in...");
+
+      try {
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+
+        const { data, error } = await db.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (error) {
+          showMessage("Login failed: " + error.message);
+          return;
+        }
+
+        await verifyMembership(data.user);
+
+      } catch (error) {
+        console.error(error);
+        showMessage("Login failed. Please try again.");
+      } finally {
+        loginButton.disabled = false;
+      }
+    });
+
+
+    // ==========================================
+    // 6. REGISTER
+    // ==========================================
+
+    document.getElementById("signupButton")
+      .addEventListener("click", async function() {
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+
+        if (!email || !password) {
+          showMessage("Enter your email and password first.");
+          return;
+        }
+
+        if (password.length < 6) {
+          showMessage("Your password must be at least 6 characters.");
+          return;
+        }
+
+        showMessage("Creating your account...");
+
+        try {
+          const { data, error } = await db.auth.signUp({
+            email,
+            password
+          });
+
+          if (error) {
+            showMessage("Registration failed: " + error.message);
+            return;
+          }
+
+          if (data.session && data.user) {
+            await verifyMembership(data.user);
+          } else {
+            showMessage(
+              "Account request submitted. Check your email to confirm " +
+              "your account if required, then log in. An account alone " +
+              "does not grant Premium access."
+            );
+          }
+
+        } catch (error) {
+          console.error(error);
+          showMessage("Registration failed. Please try again.");
+        }
+      });
+
+
+    // ==========================================
+    // 7. PASSWORD RECOVERY
+    // ==========================================
+
+    document.getElementById("resetButton")
+      .addEventListener("click", async function() {
+        const email = document.getElementById("email").value.trim();
+
+        if (!email) {
+          showMessage("Enter your email address first.");
+          return;
+        }
+
+        showMessage("Requesting password recovery...");
+
+        try {
+          const { error } = await db.auth.resetPasswordForEmail(email);
+
+          if (error) {
+            showMessage("Password reset failed: " + error.message);
+          } else {
+            showMessage(
+              "If the account can receive recovery emails, " +
+              "instructions will be sent to the email address."
+            );
+          }
+        } catch (error) {
+          console.error(error);
+          showMessage("Unable to request password recovery.");
+        }
+      });
+
+
+    // ==========================================
+    // 8. LOGOUT
+    // ==========================================
+
+    document.getElementById("logoutButton")
+      .addEventListener("click", async function() {
+        showLogin("Logging out...");
+
+        // Immediately invalidate any in-progress membership check.
+        checkNumber++;
+        currentUserId = null;
+        membershipVerified = false;
+
+        const { error } = await db.auth.signOut();
+
+        if (error) {
+          console.error(error);
+          showMessage(
+            "Logout could not be confirmed. Please refresh and try again."
+          );
+        } else {
+          showLogin("You have logged out.");
+        }
+      });
+
+
+    // ==========================================
+    // 9. SESSION RESTORATION AND CHANGES
+    // ==========================================
+
+    db.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED") return;
+
+      const user = session?.user || null;
+
+      if (!user) {
+        checkNumber++;
+        currentUserId = null;
+        membershipVerified = false;
+
+        if (authInitialized) {
+          showLogin("Please log in to access this Premium game.");
+        }
+        return;
+      }
+
+      // Skip a duplicate event if the same user has already
+      // passed the membership check.
+      if (
+        membershipVerified &&
+        currentUserId === user.id &&
+        gameArea.classList.contains("premium-authorized")
+      ) {
+        return;
+      }
+
+      // Avoid performing database queries inside the auth callback.
+      setTimeout(() => {
+        verifyMembership(user);
+      }, 0);
+    });
+
+
+    // ==========================================
+    // 10. INITIALIZE
+    // ==========================================
+
+    (async function initialize() {
+      showMessage("Checking your login...");
+
+      try {
+        const { data, error } = await db.auth.getSession();
+
+        if (error) {
+          showLogin("Unable to check your session. Please refresh.");
+          return;
+        }
+
+        authInitialized = true;
+
+        if (data.session?.user) {
+          await verifyMembership(data.session.user);
+        } else {
+          showLogin("Please log in to access this Premium game.");
+        }
+
+      } catch (error) {
+        console.error(error);
+        authInitialized = true;
+        showLogin("Unable to connect. Please refresh and try again.");
+      }
+    })();
+
+  
 })();
 </script>
 </body>
