@@ -939,6 +939,10 @@ html:not(.premium-authorized) body > :not(#authScreen):not(#premium-memberBar):n
 #authScreen .muted{color:#ddd;font-size:13px}
 #premium-memberBar{display:none;position:fixed;top:8px;right:8px;z-index:1900;background:#1c2831e8;color:white;padding:5px 7px;border-radius:9px;align-items:center;gap:8px;font:12px Nunito,Arial,sans-serif}
 html.premium-authorized #premium-memberBar{display:flex}
+/* Log Out stays in the toolbar; no floating member/email label. */
+#premium-memberBar{position:static;top:auto;right:auto;z-index:auto;background:transparent;padding:0;border-radius:0;margin:0;flex:0 0 auto}
+#premium-memberBar #memberInfo{display:none!important}
+#premium-memberBar button{white-space:nowrap}
 #premium-memberBar button{padding:5px 9px;font-size:12px}
 </style>
 </head>
@@ -979,10 +983,11 @@ html.premium-authorized #premium-memberBar{display:flex}
       Creating an account does not automatically grant Premium access.
     </p>
   </section>
-<header id="premium-memberBar"><span id="memberInfo">Premium Member</span><button id="logoutButton" type="button">Log Out</button></header>
+
 
 <div class="premium-top premium-ui">
 <button onclick="Premium.open('menu')">🎮 Games</button><button onclick="Premium.open('presets')">📚 Presets & Photos</button><button onclick="Premium.open('presentation')">🖼️ Present</button><button onclick="Premium.open('help')">❔ How to Play</button><button onclick="Premium.exportJSON()">⬇️ Export File</button><button onclick="document.getElementById('premium-import').click()">⬆️ Load File</button><button onclick="Premium.fullscreen()">⛶ Fullscreen</button>
+<header id="premium-memberBar"><span id="memberInfo" hidden aria-hidden="true"></span><button id="logoutButton" type="button">Log Out</button></header>
 <input class="premium-hidden" type="file" id="premium-import" accept=".json,application/json" onchange="Premium.importJSON(event)">
 </div>
 <div id="premium-overlay" class="premium-overlay premium-ui"><div class="premium-panel">
@@ -3364,10 +3369,10 @@ const words=()=>preset().words;
 // Set a folder in Presets & Photos; changes are stored with the preset.
 const slug=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 const photoFolder=p=>String(p.photoFolder||((p.id||'').startsWith('built-')?p.id.slice(6):'custom-'+slug(p.name))).replace(/^photos\/?/i,'').replace(/^\/+|\/+$/g,'');
-const photoFile=w=>String(w.text||'').trim().toLowerCase()+'.webp';
-const autoPhoto=(w,p=preset())=>'photos/'+encodeURIComponent(photoFolder(p))+'/'+encodeURIComponent(photoFile(w));
+const photoFile=(w,p=preset())=>{const name=String(w.text||'').trim();const folder=photoFolder(p).toLowerCase();return (folder==='alphabet-uppercase'||folder==='alphabet-mixed'?name:name.toLowerCase())+'.webp'};
+const autoPhoto=(w,p=preset())=>'photos/'+encodeURIComponent(photoFolder(p))+'/'+encodeURIComponent(photoFile(w,p));
 const photoCandidates=(w,p=preset())=>{
-  const name=photoFile(w), folder=photoFolder(p), candidates=[];
+  const name=photoFile(w,p), folder=photoFolder(p), candidates=[];
   if(w.image)candidates.push(w.image);
   candidates.push('photos/'+encodeURIComponent(folder)+'/'+encodeURIComponent(name));
   // Fallback for older collections that store PNGs directly in photos/.
@@ -3379,7 +3384,7 @@ const photoMarkup=(w,p=preset(),preview=false)=>{
  // Store alternative paths on the image element. If the first file is absent,
  // try the next path without losing the rest of the game interface.
  const encoded=esc(JSON.stringify(candidates));
- return `<img src="${esc(candidates[0])}" data-photo-paths="${encoded}" data-photo-index="0" alt="${esc(w.text)}" ${preview?'class="premium-editor-preview"':''} onerror="Premium.photoFallback(this)"><span class="premium-photo-missing" style="display:none">No picture found: ${esc(photoFile(w))}</span>`;
+ return `<img src="${esc(candidates[0])}" data-photo-paths="${encoded}" data-photo-index="0" alt="${esc(w.text)}" ${preview?'class="premium-editor-preview"':''} onerror="Premium.photoFallback(this)"><span class="premium-photo-missing" style="display:none">No picture found: ${esc(photoFile(w,p))}</span>`;
 };
 function photoFallback(img){
  let paths=[];try{paths=JSON.parse(img.getAttribute('data-photo-paths')||'[]')}catch(e){}
