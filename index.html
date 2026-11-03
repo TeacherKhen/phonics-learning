@@ -1018,6 +1018,10 @@ body{background-color:var(--chalkboard);background-image:radial-gradient(rgba(25
 @keyframes bp-magic-rise{0%{opacity:0;transform:translate(-50%,-50%) scale(.55)}25%{opacity:1;transform:translate(-50%,-95%) scale(1.2)}100%{opacity:0;transform:translate(-50%,-180%) scale(1)}}
 @keyframes bp-magic-flash{0%{opacity:1;transform:translate(-50%,-50%) scale(.4)}100%{opacity:0;transform:translate(-50%,-50%) scale(2)}}
 @keyframes bp-magic-spark{0%{opacity:1;transform:translate(-50%,-50%) scale(.55)}100%{opacity:0;transform:translate(calc(-50% + var(--bp-dx)),calc(-50% + var(--bp-dy))) scale(1.2)}}
+
+/* Classroom multi-touch: each game target accepts independent fingers/styluses. */
+.bp-balloon,.bp-lane,.premium-cell,.premium-team,.premium-step,.cd-cell,.cd-die,.card,.board-area{touch-action:none!important;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.bp-balloon *,.premium-cell *,.cd-cell *{pointer-events:none}
 </style>
 <style id="premium-auth-styles">
 html:not(.premium-authorized) body > :not(#authScreen):not(#premium-memberBar):not(script):not(style){visibility:hidden!important;pointer-events:none!important}
@@ -4126,7 +4130,7 @@ const BalloonPop=(()=>{
  }
  // Wait until there is room instead of stacking balloons on top of each other.
  if(others.length&&bestClearance<gap)return;
- b.style.setProperty('--bp-x',position+'px');b.style.setProperty('--bp-color',colors[Math.floor(Math.random()*colors.length)]);const flightTimes={slow:[13,18],average:[7,11],fast:[3.5,5.5]};const [minFlight,maxFlight]=flightTimes[speed]||flightTimes.average;b.style.setProperty('--bp-duration',(minFlight+Math.random()*(maxFlight-minFlight))+'s');b.dataset.team=team;b.setAttribute('aria-label','Pop '+word.text);b.innerHTML=mode==='together'?`<span class="bp-combo-photo">${Premium.balloonPhoto(word,pres)}</span><span class="bp-word">${safe(word.text)}</span>`:picture?Premium.balloonPhoto(word,pres):`<span class="bp-word">${safe(word.text)}</span>`;lane.appendChild(b);const wordLabel=b.querySelector('.bp-word');if(wordLabel){const maxFont=mode==='together'?38:54;const minFont=13;const available=Math.max(45,b.clientWidth-32);const canvas=document.createElement('canvas');const ctx=canvas.getContext('2d');let size=Math.min(maxFont,Math.max(minFont,b.clientWidth*(mode==='together'?.23:.30)));if(ctx){while(size>minFont){ctx.font='700 '+size+'px Comic Neue';if(ctx.measureText(wordLabel.textContent||'').width<=available)break;size-=1}}wordLabel.style.fontSize=size+'px'};b.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();pop(b,team)},{passive:false});b.addEventListener('animationend',e=>{if(e.animationName==='bp-rise'||e.animationName==='bp-pop')b.remove()});}
+ b.style.setProperty('--bp-x',position+'px');b.style.setProperty('--bp-color',colors[Math.floor(Math.random()*colors.length)]);const flightTimes={slow:[13,18],average:[7,11],fast:[3.5,5.5]};const [minFlight,maxFlight]=flightTimes[speed]||flightTimes.average;b.style.setProperty('--bp-duration',(minFlight+Math.random()*(maxFlight-minFlight))+'s');b.dataset.team=team;b.setAttribute('aria-label','Pop '+word.text);b.innerHTML=mode==='together'?`<span class="bp-combo-photo">${Premium.balloonPhoto(word,pres)}</span><span class="bp-word">${safe(word.text)}</span>`:picture?Premium.balloonPhoto(word,pres):`<span class="bp-word">${safe(word.text)}</span>`;lane.appendChild(b);const wordLabel=b.querySelector('.bp-word');if(wordLabel){const maxFont=mode==='together'?38:54;const minFont=13;const available=Math.max(45,b.clientWidth-32);const canvas=document.createElement('canvas');const ctx=canvas.getContext('2d');let size=Math.min(maxFont,Math.max(minFont,b.clientWidth*(mode==='together'?.23:.30)));if(ctx){while(size>minFont){ctx.font='700 '+size+'px Comic Neue';if(ctx.measureText(wordLabel.textContent||'').width<=available)break;size-=1}}wordLabel.style.fontSize=size+'px'};b.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'&&e.button!==0)return;e.preventDefault();e.stopPropagation();pop(b,team)},{passive:false});b.addEventListener('animationend',e=>{if(e.animationName==='bp-rise'||e.animationName==='bp-pop')b.remove()});}
  function magicPoints(b){
   const lane=b.closest('.bp-lane');if(!lane)return;
   const rect=b.getBoundingClientRect(),base=lane.getBoundingClientRect();
@@ -4139,6 +4143,35 @@ const BalloonPop=(()=>{
  function pop(b,team){if(!active||b.dataset.popped)return;b.dataset.popped='1';score[team]++;const el=$('bp-score-'+team);if(el)el.textContent=(team===0?'🔵 '+(players===1?'Player':'Blue'):'🔴 Red')+': '+score[team];magicPoints(b);popSound();b.classList.add('bp-popped');setTimeout(()=>b.remove(),240);if(active)spawn(team)}
  function finish(){if(!active)return;stop();const arena=document.querySelector('.bp-arena');if(!arena)return;let result=players===1?'Great reading!':score[0]===score[1]?'It’s a tie!':score[0]>score[1]?'🔵 Blue Team Wins!':'🔴 Red Team Wins!';const div=document.createElement('div');div.className='bp-results';div.innerHTML=`<div><h2>🏆 ${safe(result)}</h2><h2>${players===1?score[0]+' balloons popped!':'🔵 '+score[0]+' — 🔴 '+score[1]}</h2><p>Fantastic phonics practice!</p><button onclick="BalloonPop.setup()">⚙ Play Again</button><button onclick="Premium.open('menu')">🎮 Games</button></div>`;arena.appendChild(div);const win=$('premium-win-audio');if(win){win.currentTime=0;win.volume=1;premiumLoudSfx();win.play().catch(()=>{})}}
  return{setup,start,stop,finish,toggleMusic,volume,setSpeed};
+})();
+</script>
+
+<script>
+/* Multi-touch input adapter for classroom boards and tablets.
+   Each distinct target receives its own pointerdown; native mouse clicks remain intact.
+   The existing game rules still decide whether a move is legal. */
+(function(){
+ const targetSelector='.premium-cell,.premium-team,.cd-cell:not(.rowlabel),.cd-die';
+ document.addEventListener('pointerdown',function(e){
+   if(e.pointerType==='mouse' && e.button!==0)return;
+   if(e.pointerType!=='touch' && e.pointerType!=='pen')return;
+   const target=e.target.closest?.(targetSelector);
+   if(!target || target.disabled || !target.isConnected)return;
+   e.preventDefault();
+   e.stopPropagation();
+   // Call the original inline handler immediately, before another finger changes the DOM.
+   if(typeof target.onclick==='function')target.onclick.call(target,e);
+ },{capture:true,passive:false});
+ // Prevent a touch-generated click from invoking the same action twice.
+ let touchBlockUntil=0;
+ document.addEventListener('pointerdown',function(e){if(e.pointerType==='touch'||e.pointerType==='pen')touchBlockUntil=performance.now()+850},{capture:true});
+ document.addEventListener('click',function(e){
+   if(e.detail===0)return; // keyboard activation remains accessible
+   if(performance.now()>touchBlockUntil)return;
+   if(e.sourceCapabilities?.firesTouchEvents || e.pointerType==='touch' || e.pointerType==='pen'){
+     if(e.target.closest?.(targetSelector)){e.preventDefault();e.stopImmediatePropagation()}
+   }
+ },true);
 })();
 </script>
 </body>
