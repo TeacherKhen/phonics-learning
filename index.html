@@ -3596,6 +3596,71 @@ function presentMove(d){let n=words().length;if(n){presentIndex=(presentIndex+d+
 function toggleWord(){hideWord=!hideWord;presentation()}
 function togglePhoto(){photoVisible=!photoVisible;presentation()}
 function fullscreen(){let el=document.documentElement;if(document.fullscreenElement)document.exitFullscreen?.();else el.requestFullscreen?.().catch(()=>notify('Fullscreen not supported on this device.'))}
+/* TeacherKhen Community adapter — Phonics Board Premium. */
+window.TKPhonicsPremiumCommunityLoad = function(incoming) {
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming) ||
+      !Array.isArray(incoming.presets) || incoming.presets.length < 1 ||
+      incoming.presets.length > 100) {
+    throw new Error('Invalid Phonics Board Premium lesson.');
+  }
+  const presets = incoming.presets.map((p, i) => {
+    if (!p || typeof p !== 'object' || Array.isArray(p) ||
+        typeof p.name !== 'string' || !p.name.trim() ||
+        !Array.isArray(p.words) || !p.words.length || p.words.length > 1000) {
+      throw new Error('Invalid preset at position ' + (i + 1));
+    }
+    const words = p.words.map((w, j) => {
+      if (!w || typeof w !== 'object' || Array.isArray(w) ||
+          typeof w.text !== 'string' || !w.text.trim() ||
+          (w.image != null && (typeof w.image !== 'string' ||
+          !/^data:image\/(png|jpeg|gif|webp);base64,/i.test(w.image)))) {
+        throw new Error('Invalid word or picture in preset ' + (i + 1));
+      }
+      return {...w, id: String(w.id || 'community-word-' + j),
+        text: w.text, image: w.image || null};
+    });
+    return {...p, id: String(p.id || 'community-preset-' + i),
+      name: p.name, builtin: false, words};
+  });
+  const selected = presets.some(p => p.id === incoming.selected)
+    ? incoming.selected : presets[0].id;
+  const safeSettings = incoming.settings && typeof incoming.settings === 'object' &&
+    !Array.isArray(incoming.settings) ? incoming.settings : {};
+  const mergedSettings = {...data.settings};
+  if ([3,4,5,6].includes(Number(safeSettings.grid))) mergedSettings.grid = Number(safeSettings.grid);
+  if ([1,2,3,4].includes(Number(safeSettings.lines))) mergedSettings.lines = Number(safeSettings.lines);
+  if (Number.isInteger(Number(safeSettings.steps)) && Number(safeSettings.steps) >= 1 && Number(safeSettings.steps) <= 10) mergedSettings.steps = Number(safeSettings.steps);
+  if (Array.isArray(safeSettings.directions) && safeSettings.directions.length &&
+      safeSettings.directions.every(d => ['h','v','d'].includes(d))) mergedSettings.directions = [...new Set(safeSettings.directions)];
+  // Preserve previously saved device presets: only change in-memory data.
+  // Do not call save() or the original importJSON() here.
+  data = {...data, version: 2, presets, selected, settings: mergedSettings, game: null};
+  if (incoming.legacy && typeof incoming.legacy === 'object' && !Array.isArray(incoming.legacy)) {
+    const old = incoming.legacy;
+    if (Array.isArray(old.words)) wordList = old.words.filter(w => typeof w === 'string');
+    if (Array.isArray(old.photos)) photoStore = old.photos.filter(p => typeof p === 'string');
+    if (Array.isArray(old.overlays)) activeBoardOverlays = old.overlays.filter(o =>
+      o && typeof o === 'object' && !Array.isArray(o) &&
+      ['letter','photo'].includes(o.type) && typeof o.content === 'string'
+    ).map((o,i) => ({...o, id: 'community-overlay-' + i,
+      left:o.left||'35%', top:o.top||'25%', width:o.width||'160px',
+      height:o.height||'160px',transform:o.transform||'translate3d(0px, 0px, 0px)',
+      x:Number(o.x)||0,y:Number(o.y)||0}));
+    document.getElementById('gameMode').value = old.mode === 'team' ? 'team' : 'single';
+    document.getElementById('syncMode').value = old.sync === 'off' ? 'off' : 'on';
+    state.t1.index = 0;
+    state.t2.index = 0;
+    toggleMode();
+    renderGallery();
+    restoreBoardOverlays();
+    renderWord('t1');
+    if (document.getElementById('gameMode').value === 'team') renderWord('t2');
+  }
+  refreshFlipPresets();
+  open('presets');
+  return true;
+};
+/* End TeacherKhen Community adapter. */
 load();refreshFlipPresets();return{balloonShell:(title,body,playing=false)=>{page='balloon';shell(title,body);$('premium-overlay').classList.toggle('balloon-playing',playing);},balloonPresets:()=>data.presets,balloonSelected:()=>data.selected,balloonPhoto:(w,p)=>photoMarkup(w,p),dotsShell,getDotWords:()=>words().map(w=>w.text).filter(Boolean),photoFallback,setPhotoFolder,open,close,choose,selectPreset,useFlipPreset,start,team,claim,move,undo,restart,randomize,save,exportJSON,importJSON,newPreset,duplicate,rename,restore,deletePreset,wordText,addWord,removeWord,bulk,clearPhoto,photo,presentMove,toggleWord,togglePhoto,fullscreen};
 })();
 
@@ -4174,5 +4239,76 @@ const BalloonPop=(()=>{
  },true);
 })();
 </script>
+
+<!-- TeacherKhen Community Connector — Phonics Board Premium -->
+<script>
+(() => {
+  'use strict';
+  if (location.hash !== '#tk-community' || !window.opener) return;
+  const origins = new Set(['https://teacherkhen.com','https://www.teacherkhen.com']);
+  const msg = {
+    ready:'TK_PHONICSPREMIUM_READY',
+    lesson:'TK_PHONICSPREMIUM_LESSON',
+    loaded:'TK_PHONICSPREMIUM_LOADED',
+    error:'TK_PHONICSPREMIUM_ERROR'
+  };
+  let finished = false;
+  let pending = null;
+  let pendingOrigin = null;
+  let attempts = 0;
+  let readyTimer = null;
+  let authTimer = null;
+  const authorized = () => document.documentElement.classList.contains('premium-authorized');
+  function send(type, extra = {}, origin = null) {
+    if (!window.opener || window.opener.closed) return;
+    const payload = {type, ...extra};
+    if (origin) window.opener.postMessage(payload, origin);
+    else origins.forEach(o => window.opener.postMessage(payload, o));
+  }
+  function tryLoad() {
+    if (finished || !pending || !authorized()) return;
+    const lesson = pending;
+    pending = null;
+    try {
+      if (typeof window.TKPhonicsPremiumCommunityLoad !== 'function')
+        throw new Error('Phonics Board Premium adapter was not initialized.');
+      window.TKPhonicsPremiumCommunityLoad(lesson);
+      finished = true;
+      clearInterval(readyTimer);
+      clearInterval(authTimer);
+      send(msg.loaded, {}, pendingOrigin);
+    } catch (e) {
+      send(msg.error, {message: e?.message || 'Unable to load Premium lesson.'}, pendingOrigin);
+    }
+  }
+  window.addEventListener('message', event => {
+    if (event.source !== window.opener || !origins.has(event.origin) || finished ||
+        event.data?.type !== msg.lesson) return;
+    if (!event.data.lesson || typeof event.data.lesson !== 'object' ||
+        Array.isArray(event.data.lesson) || !Array.isArray(event.data.lesson.presets)) {
+      send(msg.error, {message:'Invalid Premium lesson JSON.'}, event.origin);
+      return;
+    }
+    pending = event.data.lesson;
+    pendingOrigin = event.origin;
+    tryLoad();
+  });
+  function announce() {
+    if (finished || pending || !window.opener || window.opener.closed || attempts++ >= 90) {
+      clearInterval(readyTimer);
+      return;
+    }
+    send(msg.ready);
+  }
+  function start() {
+    announce();
+    readyTimer = setInterval(announce, 1000);
+    authTimer = setInterval(tryLoad, 500);
+  }
+  if (document.readyState === 'complete') start();
+  else window.addEventListener('load', start, {once:true});
+})();
+</script>
+<!-- End TeacherKhen Community Connector -->
 </body>
 </html>
